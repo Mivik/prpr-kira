@@ -58,6 +58,11 @@ impl StreamManager {
 		device: Device,
 		config: StreamConfig,
 	) -> StreamManagerController {
+		println!(
+		"{:?} {:?}",
+		device.default_output_config().unwrap().buffer_size(),
+		config.buffer_size,
+	);
 		let should_drop = Arc::new(AtomicBool::new(false));
 		let should_drop_clone = should_drop.clone();
 		std::thread::spawn(move || {
@@ -139,9 +144,8 @@ impl StreamManager {
 				}
 			},
 			move |error| {
-				stream_error_producer
-					.push(error)
-					.expect("Stream error producer is full");
+				let _ = stream_error_producer.push(error);
+				// .expect("Stream error producer is full");
 			},
 		)?;
 		stream.play()?;
