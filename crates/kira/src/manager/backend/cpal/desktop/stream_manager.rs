@@ -50,26 +50,25 @@ pub(super) struct StreamManager {
 	state: State,
 	device_name: String,
 	sample_rate: u32,
+	buffer_size: Option<cpal::FrameCount>,
 }
 
 impl StreamManager {
 	pub fn start(
 		renderer: Renderer,
 		device: Device,
-		config: StreamConfig,
+		mut config: StreamConfig,
+		buffer_size: Option<cpal::FrameCount>,
 	) -> StreamManagerController {
-		println!(
-		"{:?} {:?}",
-		device.default_output_config().unwrap().buffer_size(),
-		config.buffer_size,
-	);
 		let should_drop = Arc::new(AtomicBool::new(false));
 		let should_drop_clone = should_drop.clone();
+		config.buffer_size = buffer_size.map(|it| cpal::BufferSize::Fixed(it)).unwrap_or(cpal::BufferSize::Default);
 		std::thread::spawn(move || {
 			let mut stream_manager = StreamManager {
 				state: State::Idle { renderer },
 				device_name: device_name(&device),
 				sample_rate: config.sample_rate.0,
+				buffer_size,
 			};
 			stream_manager.start_stream(&device, &config).unwrap();
 			loop {
@@ -95,13 +94,13 @@ impl StreamManager {
 			// check for device disconnection
 			if let Some(StreamError::DeviceNotAvailable) = stream_error_consumer.pop() {
 				self.stop_stream();
-				if let Ok((device, config)) = default_device_and_config() {
+				if let Ok((device, config)) = default_device_and_config(self.buffer_size) {
 					// TODO: gracefully handle errors that occur in this function
 					self.start_stream(&device, &config).unwrap();
 				}
 			}
 			// check for device changes
-			if let Ok((device, config)) = default_device_and_config() {
+			if let Ok((device, config)) = default_device_and_config(self.buffer_size) {
 				let device_name = device_name(&device);
 				let sample_rate = config.sample_rate.0;
 				if device_name != self.device_name || sample_rate != self.sample_rate {
@@ -175,12 +174,13 @@ impl StreamManager {
 	}
 }
 
-fn default_device_and_config() -> Result<(Device, StreamConfig), Error> {
+fn default_device_and_config(buffer_size: Option<cpal::FrameCount>) -> Result<(Device, StreamConfig), Error> {
 	let host = cpal::default_host();
 	let device = host
 		.default_output_device()
 		.ok_or(Error::NoDefaultOutputDevice)?;
-	let config = device.default_output_config()?.config();
+	let mut config = device.default_output_config()?.config();
+	config.buffer_size = buffer_size.map(|it| cpal::BufferSize::Fixed(it)).unwrap_or(cpal::BufferSize::Default);
 	Ok((device, config))
 }
 

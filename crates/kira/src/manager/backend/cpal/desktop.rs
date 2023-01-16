@@ -25,14 +25,15 @@ enum State {
 /// connect a [`Renderer`] to the operating system's audio driver.
 pub struct CpalBackend {
 	state: State,
+	buffer_size: Option<cpal::FrameCount>,
 }
 
 impl Backend for CpalBackend {
-	type Settings = ();
+	type Settings = Option<cpal::FrameCount>;
 
 	type Error = Error;
 
-	fn setup(_settings: Self::Settings) -> Result<(Self, u32), Self::Error> {
+	fn setup(buffer_size: Self::Settings) -> Result<(Self, u32), Self::Error> {
 		let host = cpal::default_host();
 		let device = host
 			.default_output_device()
@@ -42,6 +43,7 @@ impl Backend for CpalBackend {
 		Ok((
 			Self {
 				state: State::Uninitialized { device, config },
+				buffer_size,
 			},
 			sample_rate,
 		))
@@ -51,7 +53,7 @@ impl Backend for CpalBackend {
 		let state = std::mem::replace(&mut self.state, State::Empty);
 		if let State::Uninitialized { device, config } = state {
 			self.state = State::Initialized {
-				stream_manager_controller: StreamManager::start(renderer, device, config),
+				stream_manager_controller: StreamManager::start(renderer, device, config, self.buffer_size),
 			};
 		} else {
 			panic!("Cannot initialize the backend multiple times")
